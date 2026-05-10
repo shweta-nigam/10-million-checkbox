@@ -13,13 +13,9 @@ const app = express();
 const server = createServer(app);
 const io = new Server(server);
 
-const uri = process.env.MONGO_URI;
-await connectDB(uri);
+await connectDB(process.env.MONGO_URI);
 
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-
-const PORT = process.env.PORT ?? 3000;
+const PORT = process.env.PORT || 3000;
 
 let checkbox;
 
@@ -27,9 +23,10 @@ async function initCheckBox() {
   checkbox = await Checkbox.findOne();
 
   if (!checkbox) {
-    console.log("Creating new checkbox doc...");
+    console.log("Creating 1 million checkboxes...");
+
     checkbox = await Checkbox.create({
-      states: new Array(10000).fill(false),
+      states: new Array(1000000).fill(false),
     });
   }
 
@@ -38,34 +35,46 @@ async function initCheckBox() {
 
 await initCheckBox();
 
+app.use(express.json());
+
 io.on("connection", (socket) => {
-  console.log("user connected");
-
-  if (!checkbox) return;
-
-  socket.emit("init-state", checkbox.states);
+  console.log("User connected");
 
   socket.on("toggle-checkbox", async ({ index, checked }) => {
     try {
-      // bounds check
       if (index < 0 || index >= checkbox.states.length) return;
 
-      // update memory
       checkbox.states[index] = checked;
 
-      //  update DB efficiently
       await Checkbox.updateOne(
         {},
-        { $set: { [`states.${index}`]: checked } }
+        {
+          $set: {
+            [`states.${index}`]: checked,
+          },
+        }
       );
 
-      // send to everyone
-      io.emit("update-checkbox", { index, checked });
+      io.emit("update-checkbox", {
+        index,
+        checked,
+      });
 
-    } catch (error) {
-      console.error("Error updating checkbox:", error);
+    } catch (err) {
+      console.error(err);
     }
   });
+});
+
+
+// API for chunk loading
+app.get("/states", (req, res) => {
+  const start = Number(req.query.start);
+  const end = Number(req.query.end);
+
+  const slice = checkbox.states.slice(start, end);
+
+  res.json(slice);
 });
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -75,5 +84,5 @@ app.get("/", (req, res) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`Server is listening on ${PORT}`);
+  console.log(`Server running on ${PORT}`);
 });

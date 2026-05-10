@@ -3,103 +3,150 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>10k checkbox</title>
+    <title>1 Million Checkboxes</title>
+
     <style>
       body {
-        color: white;
-        padding: 0;
         margin: 0;
-        background-color: #0e0b0b;
+        padding: 0;
+        background: #0e0b0b;
+        color: white;
+        font-family: sans-serif;
       }
-      .main-container {
-        background-color: #2b2929;
-      }
-      .checkbox {
-        background-color: rgb(168, 26, 145);
-        height: 40px;
-        width: 40px;
-        border: 1px dashed powderblue;
-        display: block;
-        list-style: none;
-        cursor: pointer;
 
-        display: flex;
-        align-items: center;
-        justify-content: center;
-      }
       h1 {
         text-align: center;
+        padding: 20px;
       }
+
       #checkboxes {
         display: flex;
-        border-color: red;
         flex-wrap: wrap;
         gap: 10px;
         padding: 20px;
-        align-items: center;
       }
+
+      .checkbox {
+        width: 40px;
+        height: 40px;
+        background: rgb(168, 26, 145);
+        border: 1px dashed powderblue;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+      }
+
       .checkbox.checked {
-        background-color: rgba(50, 205, 50, 0.856);
+        background: limegreen;
         border: 2px solid white;
       }
+
       .checkbox.checked::after {
         content: "✔";
-        color: rgb(168, 26, 145);
-        font-size: 30px;
-        font-weight: bold;
+        color: white;
+        font-size: 24px;
+      }
+
+      #loader {
+        text-align: center;
+        padding: 30px;
+        font-size: 20px;
       }
     </style>
   </head>
-   <body>
-    <h1>10,000 Checkboxes</h1>
 
-    <ul id="checkboxes"></ul>
+  <body>
+    <h1>1 Million Checkboxes</h1>
+
+    <div id="checkboxes"></div>
+    <div id="loader">Loading...</div>
 
     <script src="/socket.io/socket.io.js"></script>
 
     <script>
       const socket = io();
-      const ul = document.getElementById("checkboxes");
 
-      // INITIAL LOAD
-      socket.on("init-state", (states) => {
-        if (!states) return;
+      const container = document.getElementById("checkboxes");
+      const loader = document.getElementById("loader");
 
-        ul.innerHTML = "";
+      const TOTAL = 1000000;
+      const CHUNK_SIZE = 1000;
 
-        // loop through 10k items
-        for (let i = 0; i < states.length; i++) {
-          const li = document.createElement("li");
-          li.className = "checkbox";
+      let loaded = 0;
 
-          if (states[i]) {
-            li.classList.add("checked");
+      // store rendered elements only
+      const renderedBoxes = new Map();
+
+      // load chunk
+      async function loadChunk() {
+        if (loaded >= TOTAL) {
+          loader.innerText = "All loaded";
+          return;
+        }
+
+        const start = loaded;
+        const end = Math.min(start + CHUNK_SIZE, TOTAL);
+
+        const res = await fetch(`/states?start=${start}&end=${end}`);
+        const states = await res.json();
+
+        const fragment = document.createDocumentFragment();
+
+        for (let i = start; i < end; i++) {
+          const box = document.createElement("div");
+
+          box.className = "checkbox";
+
+          if (states[i - start]) {
+            box.classList.add("checked");
           }
 
-          // click handler
-          li.addEventListener("click", () => {
-            const isChecked = li.classList.toggle("checked");
+          box.dataset.index = i;
+
+          box.addEventListener("click", () => {
+            const checked = box.classList.toggle("checked");
 
             socket.emit("toggle-checkbox", {
               index: i,
-              checked: isChecked,
+              checked,
             });
           });
 
-          ul.appendChild(li);
+          renderedBoxes.set(i, box);
+
+          fragment.appendChild(box);
+        }
+
+        container.appendChild(fragment);
+
+        loaded = end;
+      }
+
+      // initial load
+      loadChunk();
+
+      // infinite scroll
+      window.addEventListener("scroll", () => {
+        const nearBottom =
+          window.innerHeight + window.scrollY >=
+          document.body.offsetHeight - 500;
+
+        if (nearBottom) {
+          loadChunk();
         }
       });
 
-      
+      // realtime updates
       socket.on("update-checkbox", ({ index, checked }) => {
-        const boxes = document.querySelectorAll(".checkbox");
+        const box = renderedBoxes.get(index);
 
-        if (!boxes[index]) return;
+        if (!box) return;
 
         if (checked) {
-          boxes[index].classList.add("checked");
+          box.classList.add("checked");
         } else {
-          boxes[index].classList.remove("checked");
+          box.classList.remove("checked");
         }
       });
     </script>
